@@ -6,7 +6,8 @@ from supabase import create_client, Client
 from pathlib import Path
 from openai import OpenAI
 import pandas as pd
-from recommender import get_u_final, calculate_similarities
+from .recommender import get_u_final, calculate_similarities
+
 
 
 # Charger les variables d'environnement depuis .env
