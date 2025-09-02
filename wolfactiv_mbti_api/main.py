@@ -20,6 +20,16 @@ supabase_url = "https://oimzzeyjjovxdhuscmqw.supabase.co"
 supabase: Client = create_client(supabase_url, supabase_key)
 
 app = FastAPI()
+from fastapi.middleware.cors import CORSMiddleware
+
+# OUVERT pour les tests (avant d'avoir le front)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],      # à verrouiller ensuite
+    allow_credentials=False,  # doit rester False si allow_origins == ["*"]
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class QuizRequest(BaseModel):
     email: str
