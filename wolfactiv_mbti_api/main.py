@@ -62,18 +62,23 @@ Analyse-les et indique uniquement le type MBTI (parmi INFP, ESTJ, ENTP...) sans 
 # Récupération du vecteur MBTI
 def get_vector_from_mbti(mbti: str) -> dict:
     try:
-        excel_path = r"C:\Users\helen\OneDrive\Documents\Entreprise\wolfactiv\wolfactool\encoding_perso.xlsx"
-        df = pd.read_excel(excel_path)
+        if not EXCEL_PATH.exists():
+            raise FileNotFoundError(f"Fichier Excel introuvable: {EXCEL_PATH}")
+
+        df = pd.read_excel(EXCEL_PATH)  # ✅ chemin relatif
+
         if "MBTI" not in df.columns:
             raise ValueError("Colonne 'MBTI' absente dans le fichier.")
+
         row = df[df["MBTI"].str.upper() == mbti.upper()]
         if row.empty:
             raise ValueError(f"Type MBTI {mbti} non trouvé.")
+
         vector = row.iloc[0, 1:].astype(float).to_dict()
         return vector
+
     except Exception as e:
         raise RuntimeError(f"Erreur dans le chargement du vecteur MBTI : {e}")
-
 # Ajustement du vecteur
 def adjust_vector(vector: dict, disliked: list, happy: str, strong: bool, strong_odor: str) -> dict:
     for note in disliked:
