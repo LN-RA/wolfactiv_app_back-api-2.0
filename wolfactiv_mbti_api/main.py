@@ -8,7 +8,7 @@ from openai import OpenAI
 import pandas as pd
 from .recommender import get_u_final, calculate_similarities
 
-
+from pathlib import Path BASE_DIR = Path(__file__).parent excel_path = BASE_DIR / "encoding_perso.xlsx" # place le fichier à côté de main.py
 
 # Charger les variables d'environnement depuis .env
 env_path = Path(__file__).parent / ".env"
