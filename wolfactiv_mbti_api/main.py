@@ -1,199 +1,164 @@
+# --- imports ---
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
-import os
-from supabase import create_client, Client
 from pathlib import Path
-from openai import OpenAI
+import os
 import pandas as pd
+from supabase import create_client, Client
+from openai import OpenAI
 from .recommender import get_u_final, calculate_similarities
-from pathlib import Path
 
-import os
-
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")  # ⚠️ service role
-supabase_sr: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-
+# === chargement ENV (AVANT de lire os.getenv) ===
 BASE_DIR = Path(__file__).parent
-EXCEL_PATH = (BASE_DIR / "encoding_perso.xlsx").resolve()  # fichier à côté de main.py
+load_dotenv(BASE_DIR / ".env")
 
-# Charger les variables d'environnement depuis .env
-env_path = Path(__file__).parent / ".env"
-load_dotenv(dotenv_path=env_path)
+# === clés/projets ===
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://oimzzeyjjovxdhuscmqw.supabase.co")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")  # ⚠️ service role (serveur seulement)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Clés API
-openai_api_key = os.getenv("OPENAI_API_KEY")
-supabase_key = os.getenv("SUPABASE_KEY")
-supabase_url = "https://oimzzeyjjovxdhuscmqw.supabase.co"
-supabase: Client = create_client(supabase_url, supabase_key)
+# Client Supabase côté serveur (bypass RLS) : on peut l'utiliser pour tout ici
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
+EXCEL_PATH = (BASE_DIR / "encoding_perso.xlsx").resolve()
 
 app = FastAPI()
-from fastapi.middleware.cors import CORSMiddleware
-
-# OUVERT pour les tests (avant d'avoir le front)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],      # à verrouiller ensuite
-    allow_credentials=False,  # doit rester False si allow_origins == ["*"]
+    allow_origins=["*"],      # OK pour DEV, restreins ensuite
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-def persona_from_mbti(mbti: str):
-    mapping = {
-        "INFP": ("Le/La Rêveur·se", "Suis l’étoile qui te guide."),
-        "ENTJ": ("Le/La Stratège", "Construis, décide, avance."),
-        # ...
-    }
-    return mapping.get(mbti, ("Votre Personnage",
-                              "Votre citation personnalisée sera bientôt disponible."))
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
+# --- helpers ---
 class QuizRequest(BaseModel):
     email: str
 
-# Fonction d'inférence MBTI
+def persona_from_mbti(mbti: str) -> tuple[str, str]:
+    mapping = {
+        "INFP": ("Le/La Rêveur·se", "Suis l’étoile qui te guide."),
+        "ENTJ": ("Le/La Stratège", "Construis, décide, avance."),
+        # ... complète ta table
+    }
+    return mapping.get(
+        mbti.upper(),
+        ("Votre Personnage", "Votre citation personnalisée sera bientôt disponible.")
+    )
+
 def infer_mbti_from_answers(answers_text: str) -> str:
     prompt = f'''
 Tu es un expert en psychologie MBTI.
 Voici des réponses à des questions de personnalité :
 "{answers_text}"
 
-Analyse-les et indique uniquement le type MBTI (parmi INFP, ESTJ, ENTP...) sans explication.
-''' 
-    client = OpenAI(api_key=openai_api_key)
-    response = client.chat.completions.create(
+Indique uniquement le type MBTI (INFP, ESTJ, ENTP...).
+'''
+    client = OpenAI(api_key=OPENAI_API_KEY)
+    resp = client.chat.completions.create(
         model="gpt-4",
         messages=[
             {"role": "system", "content": "Tu es un expert MBTI."},
             {"role": "user", "content": prompt}
         ]
     )
-    return response.choices[0].message.content.strip().upper()
+    return resp.choices[0].message.content.strip().upper()
 
-# Récupération du vecteur MBTI
 def get_vector_from_mbti(mbti: str) -> dict:
-    try:
-        if not EXCEL_PATH.exists():
-            raise FileNotFoundError(f"Fichier Excel introuvable: {EXCEL_PATH}")
+    if not EXCEL_PATH.exists():
+        raise FileNotFoundError(f"Fichier Excel introuvable: {EXCEL_PATH}")
+    df = pd.read_excel(EXCEL_PATH)
+    if "MBTI" not in df.columns:
+        raise ValueError("Colonne 'MBTI' absente dans le fichier.")
+    row = df[df["MBTI"].str.upper() == mbti.upper()]
+    if row.empty:
+        raise ValueError(f"Type MBTI {mbti} non trouvé.")
+    return row.iloc[0, 1:].astype(float).to_dict()
 
-        df = pd.read_excel(EXCEL_PATH)  # ✅ chemin relatif
-
-        if "MBTI" not in df.columns:
-            raise ValueError("Colonne 'MBTI' absente dans le fichier.")
-
-        row = df[df["MBTI"].str.upper() == mbti.upper()]
-        if row.empty:
-            raise ValueError(f"Type MBTI {mbti} non trouvé.")
-
-        vector = row.iloc[0, 1:].astype(float).to_dict()
-        return vector
-
-    except Exception as e:
-        raise RuntimeError(f"Erreur dans le chargement du vecteur MBTI : {e}")
-# Ajustement du vecteur
 def adjust_vector(vector: dict, disliked: list, happy: str, strong: bool, strong_odor: str) -> dict:
-    for note in disliked:
-        if note in vector:
-            vector[note] = 0.0
-    if happy in vector:
-        vector[happy] += 1.0
-    if strong and strong_odor in vector:
-        vector[strong_odor] += 1.0
+    for note in disliked or []:
+        if note in vector: vector[note] = 0.0
+    if happy and happy in vector: vector[happy] += 1.0
+    if strong and strong_odor and strong_odor in vector: vector[strong_odor] += 1.0
     return vector
 
-# Endpoint principal
-@app.post("/analyze_mbti")
+@app.get("/health")
+def health():
+    return {"status": "ok"}
 
+# --- endpoint principal ---
+@app.post("/analyze_mbti")
 def analyze_mbti(data: QuizRequest):
     try:
-        print("🔍 Recherche quiz pour :", data.email)
-        result = supabase.table("quiz_results")\
+        # 1) Dernier quiz pour cet email
+        r = supabase.table("quiz_results")\
             .select("*")\
             .eq("email", data.email)\
             .order("submitted_at", desc=True)\
             .limit(1)\
             .execute()
-
-        if not result.data:
+        if not r.data:
             return {"error": "Aucune donnée pour cet email"}
 
-        user_data = result.data[0]
+        user_data = r.data[0]
         answers = user_data.get("personality_answers", "")
         if isinstance(answers, list):
             answers = "\n".join(answers)
-
         if not answers:
             return {"error": "Réponses manquantes"}
 
+        # 2) MBTI + vecteur ajusté
         mbti = infer_mbti_from_answers(answers)
-        print("🧬 MBTI :", mbti)
+        disliked = user_data.get("disliked_odors", []) or []
+        happy = user_data.get("happy_memory_odor", "") or ""
+        strong = bool(user_data.get("strong_memory", False))
+        strong_odor = user_data.get("strong_memory_odor", "") or ""
 
-        # Données sensorielles
-        disliked = user_data.get("disliked_odors", [])
-        happy = user_data.get("happy_memory_odor", "")
-        strong = user_data.get("strong_memory", False)
-        strong_odor = user_data.get("strong_memory_odor", "")
-
-        # Vecteur brut et ajusté
         vector = get_vector_from_mbti(mbti)
         vector = adjust_vector(vector, disliked, happy, strong, strong_odor)
-        print("📊 Vecteur final :", vector)
 
-        # Sauvegarde
+        # 3) Recos parfums
+        u_final = get_u_final(list(vector.values()))
+        top_perfumes = calculate_similarities(u_final)  # ← list[dict]
+
+        # 4) Persona + radar
+        character_name, quote = persona_from_mbti(mbti)
+        # Si tu n'as pas de mapping spécifique pour le radar, tu peux envoyer le dict tel quel :
+        radar_data = vector  # sinon construis un objet avec tes axes
+
+        # 5) Historique dans resultats_mbti (facultatif)
         supabase.table("resultats_mbti").insert({
             "email": data.email,
             "mbti_result": mbti,
             "vector": list(vector.values())
         }).execute()
 
-        # Étape 1 : conversion en vecteur numpy
-        vector_np = list(vector.values())
+        # 6) Upsert dans results (lu par le front)
+        payload = {
+            "email": data.email,
+            "mbti_result": mbti,
+            "vector": list(vector.values()),
+            "character_name": character_name,
+            "quote": quote,
+            "top_perfumes": top_perfumes,  # JSONB
+            "radar_data": radar_data       # JSONB
+        }
+        supabase.table("results").upsert(payload, on_conflict="email").execute()
 
-        # Étape 2 : projection avec la matrice S
-        u_final = get_u_final(vector_np)
-
-        # Étape 3 : calcul des similarités
-        top_perfumes = calculate_similarities(u_final)
-
-        # Réponse complète
+        # 7) Retour API (pour affichage immédiat)
         return {
             "email": data.email,
             "mbti": mbti,
             "vector": vector,
-            "top_perfumes": top_perfumes
+            "character_name": character_name,
+            "quote": quote,
+            "top_perfumes": top_perfumes,
+            "radar_data": radar_data
         }
 
     except Exception as e:
         print("❌ Erreur dans analyze_mbti:", e)
-        return {
-            "error": "Erreur interne",
-            "details": str(e)
-        }
-    character_name, quote = persona_from_mbti(mbti)
+        return {"error": "Erreur interne", "details": str(e)}
 
-radar_data = {
-    # adapte aux axes que tu utilises
-    # Exemples :
-    "Frais": float(vector.get("fresh", 0)),
-    "Gourmand": float(vector.get("sweet", 0)),
-    # ...
-}
-
-payload = {
-    "email": data.email,
-    "mbti_result": mbti,
-    "vector": list(vector.values()),
-    "character_name": character_name,
-    "quote": quote,
-    "top_perfumes": top_perfumes,  # list[dict] -> JSON
-    "radar_data": radar_data       # dict -> JSON
-}
-
-supabase_sr.table("results").upsert(payload, on_conflict="email").execute()
-
-    ...
