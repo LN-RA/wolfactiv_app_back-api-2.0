@@ -9,6 +9,12 @@ import pandas as pd
 from .recommender import get_u_final, calculate_similarities
 from pathlib import Path
 
+import os
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")  # ⚠️ service role
+supabase_sr: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
 BASE_DIR = Path(__file__).parent
 EXCEL_PATH = (BASE_DIR / "encoding_perso.xlsx").resolve()  # fichier à côté de main.py
 
@@ -33,6 +39,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+def persona_from_mbti(mbti: str):
+    mapping = {
+        "INFP": ("Le/La Rêveur·se", "Suis l’étoile qui te guide."),
+        "ENTJ": ("Le/La Stratège", "Construis, décide, avance."),
+        # ...
+    }
+    return mapping.get(mbti, ("Votre Personnage",
+                              "Votre citation personnalisée sera bientôt disponible."))
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -158,5 +174,26 @@ def analyze_mbti(data: QuizRequest):
             "error": "Erreur interne",
             "details": str(e)
         }
-    
+    character_name, quote = persona_from_mbti(mbti)
+
+radar_data = {
+    # adapte aux axes que tu utilises
+    # Exemples :
+    "Frais": float(vector.get("fresh", 0)),
+    "Gourmand": float(vector.get("sweet", 0)),
+    # ...
+}
+
+payload = {
+    "email": data.email,
+    "mbti_result": mbti,
+    "vector": list(vector.values()),
+    "character_name": character_name,
+    "quote": quote,
+    "top_perfumes": top_perfumes,  # list[dict] -> JSON
+    "radar_data": radar_data       # dict -> JSON
+}
+
+supabase_sr.table("results").upsert(payload, on_conflict="email").execute()
+
     ...
