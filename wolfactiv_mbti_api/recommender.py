@@ -88,7 +88,7 @@ def _pick_col(df: pd.DataFrame, candidates):
 
 def calculate_similarities(u_final):
     # Chargement du fichier des parfums enrichis
-    df_parfums = read_csv_robust(PARFUMS_PATH, header=1)  # <— IMPORTANT : header=1
+    df_parfums = read_csv_robust(PARFUMS_PATH, header=0)  # <— IMPORTANT : header=1
 
     # Nettoyage des colonnes (espaces et espaces insécables)
     df_parfums.columns = (
