@@ -99,77 +99,74 @@ def adjust_vector(vector: dict, disliked: list, happy: str, strong: bool, strong
 def health():
     return {"status": "ok"}
 
-# --- endpoint principal ---
+from supabase import Client
+from fastapi import HTTPException, Request
+
 @app.post("/analyze_mbti")
 def analyze_mbti(payload: QuizRequest, request: Request):
+    # 0) Récupérer le client Supabase initialisé au startup
     sb: Client | None = getattr(request.app.state, "supabase", None)
     if sb is None:
-         raise HTTPException(status_code=500, detail="Supabase non configuré sur le serveur")
-        r = sb.table("quiz_results") \
-      .select("*") \
-      .eq("email", payload.email) \
-      .order("submitted_at", desc=True) \
-      .limit(1) \
-      .execute()
-    try:
-        # 1) Dernier quiz pour cet email
-        r = supabase.table("quiz_results")\
-            .select("*")\
-            .eq("email", data.email)\
-            .order("submitted_at", desc=True)\
-            .limit(1)\
-            .execute()
-        if not r.data:
-            return {"error": "Aucune donnée pour cet email"}
+        raise HTTPException(status_code=500, detail="Supabase non configuré sur le serveur")
 
-        user_data = r.data[0]
+    try:
+        # 1) Dernier quiz pour cet email (change 'submitted_at' si besoin)
+        r = sb.table("quiz_results") \
+              .select("*") \
+              .eq("email", payload.email) \
+              .order("submitted_at", desc=True) \
+              .limit(1) \
+              .execute()
+
+        rows = getattr(r, "data", None) or []
+        if not rows:
+            raise HTTPException(status_code=404, detail=f"Aucune donnée pour {payload.email}")
+
+        user_data = rows[0]
         answers = user_data.get("personality_answers", "")
         if isinstance(answers, list):
             answers = "\n".join(answers)
         if not answers:
-            return {"error": "Réponses manquantes"}
+            raise HTTPException(status_code=422, detail="Réponses manquantes")
 
         # 2) MBTI + vecteur ajusté
         mbti = infer_mbti_from_answers(answers)
-        disliked = user_data.get("disliked_odors", []) or []
-        happy = user_data.get("happy_memory_odor", "") or ""
-        strong = bool(user_data.get("strong_memory", False))
+        disliked    = user_data.get("disliked_odors", []) or []
+        happy       = user_data.get("happy_memory_odor", "") or ""
+        strong      = bool(user_data.get("strong_memory", False))
         strong_odor = user_data.get("strong_memory_odor", "") or ""
 
         vector = get_vector_from_mbti(mbti)
         vector = adjust_vector(vector, disliked, happy, strong, strong_odor)
 
-        # 3) Recos parfums
+        # 3) Recos
         u_final = get_u_final(list(vector.values()))
-        top_perfumes = calculate_similarities(u_final)  # ← list[dict]
+        top_perfumes = calculate_similarities(u_final)
 
         # 4) Persona + radar
         character_name, quote = persona_from_mbti(mbti)
-        # Si tu n'as pas de mapping spécifique pour le radar, tu peux envoyer le dict tel quel :
-        radar_data = vector  # sinon construis un objet avec tes axes
+        radar_data = vector
 
-        # 5) Historique dans resultats_mbti (facultatif)
-        supabase.table("resultats_mbti").insert({
-            "email": data.email,
+        # 5) (optionnel) persister
+        sb.table("resultats_mbti").insert({
+            "email": payload.email,
             "mbti_result": mbti,
             "vector": list(vector.values())
         }).execute()
 
-        # 6) Upsert dans results (lu par le front)
-        payload = {
-            "email": data.email,
+        sb.table("results").upsert({
+            "email": payload.email,
             "mbti_result": mbti,
             "vector": list(vector.values()),
             "character_name": character_name,
             "quote": quote,
-            "top_perfumes": top_perfumes,  # JSONB
-            "radar_data": radar_data       # JSONB
-        }
-        supabase.table("results").upsert(payload, on_conflict="email").execute()
+            "top_perfumes": top_perfumes,
+            "radar_data": radar_data
+        }, on_conflict="email").execute()
 
-        # 7) Retour API (pour affichage immédiat)
+        # 6) Réponse
         return {
-            "email": data.email,
+            "email": payload.email,
             "mbti": mbti,
             "vector": vector,
             "character_name": character_name,
@@ -178,7 +175,8 @@ def analyze_mbti(payload: QuizRequest, request: Request):
             "radar_data": radar_data
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        print("❌ Erreur dans analyze_mbti:", e)
-        return {"error": "Erreur interne", "details": str(e)}
-
+        # Log si tu veux: print("❌ Erreur analyze_mbti:", e)
+        raise HTTPException(status_code=500, detail=str(e))
