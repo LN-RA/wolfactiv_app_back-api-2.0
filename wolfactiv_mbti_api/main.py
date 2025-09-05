@@ -14,12 +14,12 @@ from .recommender import get_u_final, calculate_similarities
 BASE_DIR = Path(__file__).parent
 load_dotenv(BASE_DIR / ".env")
 
+EXCEL_PATH = (BASE_DIR / "data" / "encoding_perso.xlsx").resolve()
+
 # === clés/projets ===
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://oimzzeyjjovxdhuscmqw.supabase.co")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")  # ⚠️ service role (serveur seulement)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-EXCEL_PATH = (BASE_DIR / "data" / "encoding_perso.xlsx").resolve()
 
 app = FastAPI()
 app.add_middleware(
@@ -80,7 +80,7 @@ Indique uniquement le type MBTI (INFP, ESTJ, ENTP...).
 def get_vector_from_mbti(mbti: str) -> dict:
     if not EXCEL_PATH.exists():
         raise FileNotFoundError(f"Fichier Excel introuvable: {EXCEL_PATH}")
-    df = pd.read_excel(EXCEL_PATH)
+   df = pd.read_excel(EXCEL_PATH, engine="openpyxl")
     if "MBTI" not in df.columns:
         raise ValueError("Colonne 'MBTI' absente dans le fichier.")
     row = df[df["MBTI"].str.upper() == mbti.upper()]
