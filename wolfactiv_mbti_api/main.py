@@ -101,7 +101,16 @@ def health():
 
 # --- endpoint principal ---
 @app.post("/analyze_mbti")
-def analyze_mbti(data: QuizRequest):
+def analyze_mbti(payload: QuizRequest, request: Request):
+    sb: Client | None = getattr(request.app.state, "supabase", None)
+    if sb is None:
+         raise HTTPException(status_code=500, detail="Supabase non configuré sur le serveur")
+        r = sb.table("quiz_results") \
+      .select("*") \
+      .eq("email", payload.email) \
+      .order("submitted_at", desc=True) \
+      .limit(1) \
+      .execute()
     try:
         # 1) Dernier quiz pour cet email
         r = supabase.table("quiz_results")\
