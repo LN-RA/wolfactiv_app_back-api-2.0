@@ -58,7 +58,7 @@ def get_u_final(u_vector):
     print("📥 u_vector (input):", u_vector)
 
     # Chargement de la matrice de similarité (index en 1ère colonne)
-    S_df = read_csv_robust(S_MATRIX_PATH, index_col=0)
+    S_df = read_csv_robust(S_MATRIX_PATH, index_col=0, header=0)
     S = S_df.to_numpy()
 
     # u en float, aplati
@@ -88,7 +88,7 @@ def _pick_col(df: pd.DataFrame, candidates):
 
 def calculate_similarities(u_final):
     # Chargement du fichier des parfums enrichis
-    df_parfums = read_csv_robust(PARFUMS_PATH)
+    df_parfums = read_csv_robust(PARFUMS_PATH, header=1)  # <— IMPORTANT : header=1
 
     # Nettoyage des colonnes (espaces et espaces insécables)
     df_parfums.columns = (
