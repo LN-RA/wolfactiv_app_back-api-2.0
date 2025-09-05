@@ -23,6 +23,14 @@ def _normalize(s: str) -> str:
     s = re.sub(r"[\s_\-]+", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
+    
+def read_csv_robust(path: Path, header="infer", **kwargs) -> pd.DataFrame:
+    try:
+        return pd.read_csv(path, sep=None, engine="python",
+                           encoding="utf-8-sig", decimal=",", header=header, **kwargs)
+    except UnicodeDecodeError:
+        return pd.read_csv(path, sep=None, engine="python",
+                           encoding="latin-1", decimal=",", header=header, **kwargs)
 
 # --- Localisation portable des fichiers de données ---------------------------
 PKG_DIR = Path(__file__).resolve().parent
