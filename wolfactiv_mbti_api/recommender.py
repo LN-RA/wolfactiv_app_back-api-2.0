@@ -9,11 +9,19 @@ import unicodedata
 def _normalize(s: str) -> str:
     if s is None:
         return ""
-    s = str(s).strip()
-    s = "".join(c for c in unicodedata.normalize("NFKD", s)
-                if not unicodedata.combining(c))  # sans accents
-    s = s.lower()
-    s = re.sub(r"[\s_\-]+", " ", s)  # espaces/underscores/traits uniformisés
+    s = str(s)
+    # retire les accents
+    s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
+    s = s.lower().strip()
+    # normalise ligatures courantes
+    s = s.replace("œ", "oe").replace("æ", "ae")
+    # enlève/aplanit la ponctuation (apostrophes droites et “smart”, etc.)
+    s = re.sub(r"[’'`´]", " ", s)
+    # supprime tout ce qui n'est pas alphanumérique ou espace
+    s = re.sub(r"[^\w\s]", " ", s)
+    # uniformise espaces/underscores/traits
+    s = re.sub(r"[\s_\-]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
     return s
 
 # --- Localisation portable des fichiers de données ---------------------------
@@ -109,11 +117,14 @@ def calculate_similarities(u_final):
             if m:
                 correspondance[fam] = cols_norm[m[0]]
 
-    # Fallback : si rien trouvé, prends des colonnes candidates (plutôt numériques)
+       # Fallback : si rien trouvé, prends des colonnes candidates (on laissera la coercition numérique
+    # dans cosine_similarity gérer les colonnes non-numériques -> NaN -> 0)
     if not correspondance:
-        excl = {'marque','brand','nom','name','parfum','image','url','lien','link','description','prix','price','id'}
-        numeric_cols = [c for c in df_parfums.columns if pd.api.types.is_numeric_dtype(df_parfums[c])]
-        candidate_cols = [c for c in numeric_cols if _normalize(c) not in excl]
+        excl = {
+            'marque','brand','nom','name','parfum','image','url','lien','link',
+            'description','prix','price','id','reference','ref','sku'
+        }
+        candidate_cols = [c for c in df_parfums.columns if _normalize(c) not in excl]
         if not candidate_cols:
             sample = df_parfums.columns.tolist()[:12]
             raise ValueError(f"Aucune colonne de familles olfactives trouvée. Colonnes vues: {sample}")
