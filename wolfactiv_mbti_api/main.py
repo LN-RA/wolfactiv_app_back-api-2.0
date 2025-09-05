@@ -19,7 +19,7 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "https://oimzzeyjjovxdhuscmqw.supabase.
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")  # ⚠️ service role (serveur seulement)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-EXCEL_PATH = (BASE_DIR / "encoding_perso.xlsx").resolve()
+EXCEL_PATH = (BASE_DIR / "data" / "encoding_perso.xlsx").resolve()
 
 app = FastAPI()
 app.add_middleware(
@@ -94,13 +94,6 @@ def adjust_vector(vector: dict, disliked: list, happy: str, strong: bool, strong
     if happy and happy in vector: vector[happy] += 1.0
     if strong and strong_odor and strong_odor in vector: vector[strong_odor] += 1.0
     return vector
-
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
-from supabase import Client
-from fastapi import HTTPException, Request
 
 @app.post("/analyze_mbti")
 def analyze_mbti(payload: QuizRequest, request: Request):
