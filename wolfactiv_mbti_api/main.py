@@ -19,9 +19,6 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "https://oimzzeyjjovxdhuscmqw.supabase.
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")  # ⚠️ service role (serveur seulement)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Client Supabase côté serveur (bypass RLS) : on peut l'utiliser pour tout ici
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-
 EXCEL_PATH = (BASE_DIR / "encoding_perso.xlsx").resolve()
 
 app = FastAPI()
@@ -32,6 +29,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+@app.on_event("startup")
+def init_supabase():
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+    if not url or not key:
+        print("[WARN] Supabase non configuré (SUPABASE_URL + key manquants).")
+        app.state.supabase = None
+    else:
+        app.state.supabase = create_client(url, key)
+        print("[INFO] Supabase initialisé.")
+
+@app.get("/health", include_in_schema=False)
+def health():
+    return {"status": "ok", "supabase": bool(getattr(app.state, "supabase", None))}
 
 # --- helpers ---
 class QuizRequest(BaseModel):
