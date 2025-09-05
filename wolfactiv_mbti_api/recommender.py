@@ -104,6 +104,7 @@ def calculate_similarities(u_final):
     ]
 
     # dictionnaire "nom normalisé" -> "nom réel dans le CSV"
+       # dictionnaire "nom normalisé" -> "nom réel dans le CSV"
     cols_norm = { _normalize(c): c for c in df_parfums.columns }
 
     correspondance = {}
@@ -112,10 +113,29 @@ def calculate_similarities(u_final):
         if fn in cols_norm:
             correspondance[fam] = cols_norm[fn]
         else:
-            # fuzzy sur les clés normalisées
-            m = difflib.get_close_matches(fn, list(cols_norm.keys()), n=1, cutoff=0.7)
+            m = difflib.get_close_matches(fn, list(cols_norm.keys()), n=1, cutoff=0.6)
             if m:
                 correspondance[fam] = cols_norm[m[0]]
+
+    if correspondance:
+        print("[INFO] Colonnes familles détectées :", list(correspondance.values()))
+        note_columns = df_parfums[list(correspondance.values())]
+    else:
+        # Fallback si rien ne matche : on sélectionne des colonnes candidates
+        excl = {
+            'marque','brand','nom','name','parfum','image','url','lien','link',
+            'description','prix','price','id','reference','ref','sku'
+        }
+        candidate_cols = [c for c in df_parfums.columns if _normalize(c) not in excl]
+        print("[WARN] Aucune colonne famille matchée; fallback sur colonnes :", candidate_cols[:10])
+
+        if not candidate_cols:
+            sample = df_parfums.columns.tolist()[:12]
+            raise ValueError(f"Aucune colonne de familles olfactives trouvée. Colonnes vues: {sample}")
+
+        note_columns = df_parfums[candidate_cols]
+
+
 
        # Fallback : si rien trouvé, prends des colonnes candidates (on laissera la coercition numérique
     # dans cosine_similarity gérer les colonnes non-numériques -> NaN -> 0)
