@@ -1,4 +1,4 @@
-﻿Famille;Epicee;Ambrée;Boisée Mousse;Hespéridée;Florale;Aromatique;Cuir;Boisée;Balsamique;Florale Fraîche;Verte;Florale Rosée;Musquée;Fruitée;Florale Poudrée;Marine;Fleur D'Oranger;Conifère Terpénique;Aldéhydée
+﻿Famille olfactive;Epicee;Ambrée;Boisée Mousse;Hespéridée;Florale;Aromatique;Cuir;Boisée;Balsamique;Florale Fraîche;Verte;Florale Rosée;Musquée;Fruitée;Florale Poudrée;Marine;Fleur D'Oranger;Conifère Terpénique;Aldéhydée
 Epicee;1.0;0.0;0.0;0.0;0.0;0.5;0.0;0.0;0.0;0.0;0.0;0.0;0.0;0.0;0.0;0.0;0.0;0.0;0.2
 Ambrée;0.2;1.0;0.0;0.0;0.0;0.0;0.7;0.0;0.6;0.0;0.0;0.0;0.5;0.0;0.0;0.0;0.0;0.0;0.0
 Boisée Mousse;0.0;0.0;1.0;0.0;0.0;0.0;0.0;0.85;0.0;0.0;0.0;0.0;0.0;0.0;0.0;0.0;0.0;0.0;0.0
@@ -18,3 +18,4 @@ Marine;0.0;0.0;0.0;0.0;0.0;0.0;0.0;0.0;0.0;0.7;0.4;0.0;0.0;0.0;0.0;1.0;0.0;0.0;0
 Fleur D'Oranger;0.0;0.0;0.0;0.5;0.6;0.0;0.0;0.0;0.0;0.0;0.0;0.0;0.0;0.0;0.0;0.0;1.0;0.0;0.2
 Conifère Terpénique;0.0;0.0;0.0;0.0;0.0;0.0;0.0;0.7;0.0;0.0;0.0;0.0;0.0;0.0;0.0;0.0;0.0;1.0;0.0
 Aldéhydée;0.0;0.0;0.0;0.4;0.3;0.3;0.0;0.0;0.0;0.3;0.2;0.0;0.0;0.0;0.0;0.0;0.2;0.0;1.0
+
