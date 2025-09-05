@@ -3,6 +3,18 @@ import os
 import numpy as np
 import pandas as pd
 import difflib
+import re             
+import unicodedata    
+
+def _normalize(s: str) -> str:
+    if s is None:
+        return ""
+    s = str(s).strip()
+    s = "".join(c for c in unicodedata.normalize("NFKD", s)
+                if not unicodedata.combining(c))  # sans accents
+    s = s.lower()
+    s = re.sub(r"[\s_\-]+", " ", s)  # espaces/underscores/traits uniformisés
+    return s
 
 # --- Localisation portable des fichiers de données ---------------------------
 PKG_DIR = Path(__file__).resolve().parent
@@ -75,25 +87,39 @@ def calculate_similarities(u_final):
     image_col = _pick_col(df_parfums, ['Image', 'images parfums', 'images_parfums', 'image'])
     url_col   = _pick_col(df_parfums, ['URL', 'Lien de redirection', 'lien', 'link', 'url'])
 
-    # Familles olfactives à matcher (tolérance sur les noms réels de colonnes)
+    # === Familles olfactives : matching tolérant ===
     familles_olfactives = [
-        'Epicee', 'Ambree', 'Boisee Mousse', 'Hesperidee', 'Florale', 'Aromatique',
-        'Cuir', 'Boisee', 'Balsamique', 'Florale Fraiche', 'Verte', 'Florale Rosee',
-        'Musquee', 'Fruitee', 'Florale Poudree', 'Marine', "Fleur D'Oranger",
-        'Conifere Terpenique', 'Aldehydee'
+        'Epicee','Ambree','Boisee Mousse','Hesperidee','Florale','Aromatique',
+        'Cuir','Boisee','Balsamique','Florale Fraiche','Verte','Florale Rosee',
+        'Musquee','Fruitee','Florale Poudree','Marine',"Fleur D'Oranger",
+        'Conifere Terpenique','Aldehydee'
     ]
 
+    # dictionnaire "nom normalisé" -> "nom réel dans le CSV"
+    cols_norm = { _normalize(c): c for c in df_parfums.columns }
+
     correspondance = {}
-    colonnes_fichier = df_parfums.columns.tolist()
-    for famille in familles_olfactives:
-        match = difflib.get_close_matches(famille, colonnes_fichier, n=1, cutoff=0.6)
-        if match:
-            correspondance[famille] = match[0]
+    for fam in familles_olfactives:
+        fn = _normalize(fam)
+        if fn in cols_norm:
+            correspondance[fam] = cols_norm[fn]
+        else:
+            # fuzzy sur les clés normalisées
+            m = difflib.get_close_matches(fn, list(cols_norm.keys()), n=1, cutoff=0.7)
+            if m:
+                correspondance[fam] = cols_norm[m[0]]
 
+    # Fallback : si rien trouvé, prends des colonnes candidates (plutôt numériques)
     if not correspondance:
-        raise ValueError("Aucune colonne de familles olfactives trouvée dans le CSV.")
-
-    note_columns = df_parfums[[v for v in correspondance.values()]]
+        excl = {'marque','brand','nom','name','parfum','image','url','lien','link','description','prix','price','id'}
+        numeric_cols = [c for c in df_parfums.columns if pd.api.types.is_numeric_dtype(df_parfums[c])]
+        candidate_cols = [c for c in numeric_cols if _normalize(c) not in excl]
+        if not candidate_cols:
+            sample = df_parfums.columns.tolist()[:12]
+            raise ValueError(f"Aucune colonne de familles olfactives trouvée. Colonnes vues: {sample}")
+        note_columns = df_parfums[candidate_cols]
+    else:
+        note_columns = df_parfums[list(correspondance.values())]
 
     # Adapter la taille de u_final si besoin (tronquer / compléter par des zéros)
     ufinal = np.array(u_final, dtype=float).reshape(-1)
