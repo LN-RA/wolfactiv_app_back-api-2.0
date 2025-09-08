@@ -1,190 +1,77 @@
-from pathlib import Path
-import os
 import numpy as np
 import pandas as pd
 import difflib
-import re             
-import unicodedata    
-
-def _normalize(s: str) -> str:
-    if s is None:
-        return ""
-    s = str(s)
-    # retire les accents
-    s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
-    s = s.lower().strip()
-    # normalise ligatures courantes
-    s = s.replace("œ", "oe").replace("æ", "ae")
-    # enlève/aplanit la ponctuation (apostrophes droites et “smart”, etc.)
-    s = re.sub(r"[’'`´]", " ", s)
-    # supprime tout ce qui n'est pas alphanumérique ou espace
-    s = re.sub(r"[^\w\s]", " ", s)
-    # uniformise espaces/underscores/traits
-    s = re.sub(r"[\s_\-]+", " ", s)
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
-    
-def read_csv_robust(path: Path, header="infer", **kwargs) -> pd.DataFrame:
-    try:
-        return pd.read_csv(path, sep=None, engine="python",
-                           encoding="utf-8-sig", decimal=",", header=header, **kwargs)
-    except UnicodeDecodeError:
-        return pd.read_csv(path, sep=None, engine="python",
-                           encoding="latin-1", decimal=",", header=header, **kwargs)
-
-# --- Localisation portable des fichiers de données ---------------------------
-PKG_DIR = Path(__file__).resolve().parent
-DATA_DIR = Path(os.getenv("DATA_DIR", PKG_DIR / "data"))
-
-S_MATRIX_PATH = Path(os.getenv("S_MATRIX_PATH", DATA_DIR / "similarite_matrice.csv"))
-PARFUMS_PATH  = Path(os.getenv("PARFUMS_PATH",  DATA_DIR / "parfums_enrichi.csv"))
-ENCODING_XLSX = Path(os.getenv("ENCODING_XLSX", DATA_DIR / "encoding_perso.xlsx"))  # si utilisé ailleurs
-
-def read_csv_robust(path: Path, **kwargs) -> pd.DataFrame:
-    """
-    Lecture CSV robuste:
-      - auto-détecte le séparateur (; ou ,)
-      - tente utf-8-sig puis latin-1
-    """
-    try:
-        return pd.read_csv(path, sep=None, engine="python", encoding="utf-8-sig", **kwargs)
-    except UnicodeDecodeError:
-        return pd.read_csv(path, sep=None, engine="python", encoding="latin-1", **kwargs)
-
-# -----------------------------------------------------------------------------
-
 
 def get_u_final(u_vector):
     print("📥 u_vector (input):", u_vector)
 
-    # Chargement de la matrice de similarité (index en 1ère colonne)
-    S_df = read_csv_robust(S_MATRIX_PATH, index_col=0, header=0)
+    # Chargement de la matrice de similarité
+    S_df = pd.read_csv(
+        "C:/Users/helen/Downloads/wolfactiv_backend_complet/data/similarité matrice.csv",
+        index_col=0,
+        encoding="ISO-8859-1", 
+        sep=";"
+    )
     S = S_df.to_numpy()
-
-    # u en float, aplati
-    u = np.array(u_vector, dtype=float).reshape(-1)
+    u = np.array(u_vector)
 
     print("✅ Matrice S (shape):", S.shape)
     print("✅ Vecteur u (shape):", u.shape)
 
+    # Vérification de compatibilité
     if S.shape[1] != u.shape[0]:
         raise ValueError(f"Incompatibilité dimensions: S.shape={S.shape}, u.shape={u.shape}")
 
     return S @ u
 
-
-def _pick_col(df: pd.DataFrame, candidates):
-    """Choisit la première colonne existante parmi candidates (insensible à la casse),
-       sinon essaie un fuzzy match sur le premier candidat."""
-    # mapping minuscule -> nom réel
-    lower_map = {c.lower(): c for c in df.columns}
-    for cand in candidates:
-        key = cand.lower()
-        if key in lower_map:
-            return lower_map[key]
-    match = difflib.get_close_matches(candidates[0], df.columns, n=1, cutoff=0.6)
-    return match[0] if match else None
-
-
 def calculate_similarities(u_final):
     # Chargement du fichier des parfums enrichis
-    df_parfums = read_csv_robust(PARFUMS_PATH, header=0)  # <— IMPORTANT : header=1
-
-    # Nettoyage des colonnes (espaces et espaces insécables)
-    df_parfums.columns = (
-        df_parfums.columns
-        .str.strip()
-        .str.replace(r'[\u202f\u00a0]', '', regex=True)
+    df_parfums = pd.read_csv(
+        "C:/Users/helen/Downloads/wolfactiv_backend_complet/data/parfums_enrichi.csv",
+        encoding="ISO-8859-1",
+        sep=";"
     )
 
-    # Colonnes utiles (avec tolérance de noms)
-    brand_col = _pick_col(df_parfums, ['Marque', 'brand'])
-    name_col  = _pick_col(df_parfums, ['Nom du Parfum', 'Nom', 'Parfum', 'name'])
-    image_col = _pick_col(df_parfums, ['Image', 'images parfums', 'images_parfums', 'image'])
-    url_col   = _pick_col(df_parfums, ['URL', 'Lien de redirection', 'lien', 'link', 'url'])
+    # Nettoyage des colonnes
+    df_parfums.columns = df_parfums.columns.str.strip().str.replace('\u202f|\u00a0', '', regex=True)
 
-    # === Familles olfactives : matching tolérant ===
+    # Renommage des colonnes utiles
+    df_parfums.rename(columns={
+        'ï»¿images parfums': 'Image',
+        'Lien de redirection': 'URL'
+    }, inplace=True)
+
+    # Familles olfactives à matcher
     familles_olfactives = [
-        'Epicee','Ambree','Boisee Mousse','Hesperidee','Florale','Aromatique',
-        'Cuir','Boisee','Balsamique','Florale Fraiche','Verte','Florale Rosee',
-        'Musquee','Fruitee','Florale Poudree','Marine',"Fleur D'Oranger",
-        'Conifere Terpenique','Aldehydee'
+        'Epicee', 'Ambree', 'Boisee Mousse', 'Hesperidee', 'Florale', 'Aromatique',
+        'Cuir', 'Boisee', 'Balsamique', 'Florale Fraiche', 'Verte', 'Florale Rosee',
+        'Musquee', 'Fruitee', 'Florale Poudree', 'Marine', "Fleur D'Oranger",
+        'Conifere Terpenique', 'Aldehydee'
     ]
 
-    # dictionnaire "nom normalisé" -> "nom réel dans le CSV"
-       # dictionnaire "nom normalisé" -> "nom réel dans le CSV"
-    cols_norm = { _normalize(c): c for c in df_parfums.columns }
-
+    # Recherche des colonnes correspondantes
     correspondance = {}
-    for fam in familles_olfactives:
-        fn = _normalize(fam)
-        if fn in cols_norm:
-            correspondance[fam] = cols_norm[fn]
-        else:
-            m = difflib.get_close_matches(fn, list(cols_norm.keys()), n=1, cutoff=0.6)
-            if m:
-                correspondance[fam] = cols_norm[m[0]]
+    colonnes_fichier = df_parfums.columns.tolist()
+    for famille in familles_olfactives:
+        match = difflib.get_close_matches(famille, colonnes_fichier, n=1, cutoff=0.6)
+        if match:
+            correspondance[famille] = match[0]
 
-    if correspondance:
-        print("[INFO] Colonnes familles détectées :", list(correspondance.values()))
-        note_columns = df_parfums[list(correspondance.values())]
-    else:
-        # Fallback si rien ne matche : on sélectionne des colonnes candidates
-        excl = {
-            'marque','brand','nom','name','parfum','image','url','lien','link',
-            'description','prix','price','id','reference','ref','sku'
-        }
-        candidate_cols = [c for c in df_parfums.columns if _normalize(c) not in excl]
-        print("[WARN] Aucune colonne famille matchée; fallback sur colonnes :", candidate_cols[:10])
+    # Sélection des colonnes notes
+    note_columns = df_parfums[[v for v in correspondance.values()]]
+    ufinal = u_final[:note_columns.shape[1]]
 
-        if not candidate_cols:
-            sample = df_parfums.columns.tolist()[:12]
-            raise ValueError(f"Aucune colonne de familles olfactives trouvée. Colonnes vues: {sample}")
-
-        note_columns = df_parfums[candidate_cols]
-
-
-
-       # Fallback : si rien trouvé, prends des colonnes candidates (on laissera la coercition numérique
-    # dans cosine_similarity gérer les colonnes non-numériques -> NaN -> 0)
-    if not correspondance:
-        excl = {
-            'marque','brand','nom','name','parfum','image','url','lien','link',
-            'description','prix','price','id','reference','ref','sku'
-        }
-        candidate_cols = [c for c in df_parfums.columns if _normalize(c) not in excl]
-        if not candidate_cols:
-            sample = df_parfums.columns.tolist()[:12]
-            raise ValueError(f"Aucune colonne de familles olfactives trouvée. Colonnes vues: {sample}")
-        note_columns = df_parfums[candidate_cols]
-    else:
-        note_columns = df_parfums[list(correspondance.values())]
-
-    # Adapter la taille de u_final si besoin (tronquer / compléter par des zéros)
-    ufinal = np.array(u_final, dtype=float).reshape(-1)
-    n = note_columns.shape[1]
-    if ufinal.shape[0] < n:
-        ufinal = np.pad(ufinal, (0, n - ufinal.shape[0]))
-    elif ufinal.shape[0] > n:
-        ufinal = ufinal[:n]
-
-    # Similarité cosinus
+    # Calcul de la similarité cosinus
     def cosine_similarity(v1, v2):
-        v1 = pd.to_numeric(v1, errors='coerce').fillna(0).values.astype(float)
-        v2 = v2.astype(float)
         norm1, norm2 = np.linalg.norm(v1), np.linalg.norm(v2)
-        return 0.0 if norm1 == 0 or norm2 == 0 else float(np.dot(v1, v2) / (norm1 * norm2))
+        return 0 if norm1 == 0 or norm2 == 0 else np.dot(v1, v2) / (norm1 * norm2)
 
     similarities = []
     for i, row in note_columns.iterrows():
-        sim = cosine_similarity(row, ufinal)
-
-        marque = str(df_parfums.loc[i, brand_col]) if brand_col else ""
-        nom    = str(df_parfums.loc[i, name_col])  if name_col  else ""
-        parfum_name = f"{marque} - {nom}".strip(" -")
-
-        image = df_parfums.loc[i, image_col] if image_col else ""
-        url   = df_parfums.loc[i, url_col]   if url_col   else ""
+        sim = cosine_similarity(row.values.astype(float), ufinal)
+        parfum_name = f"{df_parfums.loc[i, 'Marque']} - {df_parfums.loc[i, 'Nom du Parfum']}"
+        image = df_parfums.loc[i, 'Image'] if 'Image' in df_parfums.columns else ""
+        url = df_parfums.loc[i, 'URL'] if 'URL' in df_parfums.columns else ""
 
         similarities.append({
             "parfum": parfum_name,
@@ -193,5 +80,6 @@ def calculate_similarities(u_final):
             "url": url
         })
 
+    # Tri décroissant
     similarities.sort(key=lambda x: x["similarité"], reverse=True)
     return similarities[:5]
